@@ -211,6 +211,32 @@ func TestNewPartialSPNWithFallbackAuth(t *testing.T) {
 	}
 }
 
+// TestAuthPrecedenceSASOverAccountKey verifies that when both a SAS token and an
+// account key are supplied (as the legacy foreman invocation does), the SAS token
+// wins. The SAS path uses no credential and skips Create(), so New() succeeds without
+// a network call and leaves sharedKeyCred nil.
+func TestAuthPrecedenceSASOverAccountKey(t *testing.T) {
+	t.Parallel()
+
+	b, err := New(log.NewNopLogger(), Config{
+		AccountName:    "myaccount",
+		AccountKey:     "c29tZWtleQ==",
+		SASToken:       "sv=2020-08-04&ss=b&sig=abc",
+		BlobStorageURL: "blob.core.windows.net",
+		ContainerName:  "cache",
+		Timeout:        5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	if b.sharedKeyCred != nil {
+		t.Error("expected SAS path (sharedKeyCred nil), but account-key path was taken")
+	}
+	if b.sasToken == "" {
+		t.Error("expected sasToken to be set")
+	}
+}
+
 // TestCDNContainerAndBlob verifies that the CDN URL keeps the container segment for
 // both the current container-name layout and the legacy --remote-root layout.
 func TestCDNContainerAndBlob(t *testing.T) {

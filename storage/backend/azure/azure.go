@@ -74,6 +74,19 @@ func New(l log.Logger, c Config) (*Backend, error) {
 	)
 
 	switch {
+	// A SAS token takes precedence over an account key. Foreman historically passes
+	// --azure.account-key alongside a per-operation AZURE_SAS_TOKEN, and the SAS token
+	// is the credential actually scoped to the operation. Preferring it matches the
+	// pre-migration binary and avoids 400 InvalidAuthenticationInfo when the account
+	// key is empty or invalid in SAS-based deployments.
+	case c.SASToken != "":
+		// Shared Access Signature authentication.
+		level.Info(l).Log("msg", "using SAS token for cache operation")
+		containerClient, err = container.NewClientWithNoCredential(blobContainerURL(c), nil)
+		if err != nil {
+			return nil, fmt.Errorf("azure container client, %w", err)
+		}
+
 	case c.AccountKey != "":
 		// Shared account key authentication.
 		cred, credErr := azblob.NewSharedKeyCredential(c.AccountName, c.AccountKey)
@@ -82,14 +95,6 @@ func New(l log.Logger, c Config) (*Backend, error) {
 		}
 		b.sharedKeyCred = cred
 		containerClient, err = container.NewClientWithSharedKeyCredential(blobContainerURL(c), cred, nil)
-		if err != nil {
-			return nil, fmt.Errorf("azure container client, %w", err)
-		}
-
-	case c.SASToken != "":
-		// Shared Access Signature authentication.
-		level.Info(l).Log("msg", "using SAS token for cache operation")
-		containerClient, err = container.NewClientWithNoCredential(blobContainerURL(c), nil)
 		if err != nil {
 			return nil, fmt.Errorf("azure container client, %w", err)
 		}
