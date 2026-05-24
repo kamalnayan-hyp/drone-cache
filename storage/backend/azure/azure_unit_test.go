@@ -211,3 +211,51 @@ func TestNewPartialSPNWithFallbackAuth(t *testing.T) {
 	}
 }
 
+// TestCDNContainerAndBlob verifies that the CDN URL keeps the container segment for
+// both the current container-name layout and the legacy --remote-root layout.
+func TestCDNContainerAndBlob(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		containerName string
+		path          string
+		wantContainer string
+		wantBlob      string
+	}{
+		{
+			name:          "current layout: explicit container, key has no container prefix",
+			containerName: "cache",
+			path:          "orgid_1/darwin_key/file.tar",
+			wantContainer: "cache",
+			wantBlob:      "orgid_1/darwin_key/file.tar",
+		},
+		{
+			name:          "legacy layout: empty container, container rides as first segment",
+			containerName: "",
+			path:          "cache/orgid_1/darwin_key/file.tar",
+			wantContainer: "cache",
+			wantBlob:      "orgid_1/darwin_key/file.tar",
+		},
+		{
+			name:          "leading slash is trimmed",
+			containerName: "cache",
+			path:          "/orgid_1/darwin_key/file.tar",
+			wantContainer: "cache",
+			wantBlob:      "orgid_1/darwin_key/file.tar",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := &Backend{cfg: Config{ContainerName: tc.containerName}}
+			gotContainer, gotBlob := b.cdnContainerAndBlob(tc.path)
+			if gotContainer != tc.wantContainer || gotBlob != tc.wantBlob {
+				t.Errorf("cdnContainerAndBlob(%q) = (%q, %q), want (%q, %q)",
+					tc.path, gotContainer, gotBlob, tc.wantContainer, tc.wantBlob)
+			}
+		})
+	}
+}
+

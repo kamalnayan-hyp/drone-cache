@@ -149,16 +149,13 @@ func (b *Backend) Get(ctx context.Context, p string, w io.Writer) error {
 
 		if b.cfg.CDNHost != "" {
 			b.logger.Log("msg", "using cdn host")
-			filename := filepath.Base(p)
-			cacheKey := filepath.Base(filepath.Dir(p))
-			remoteRoot := filepath.Dir(filepath.Dir(p))
-			if filename == "" || cacheKey == "" || remoteRoot == "" {
+			containerName, blobPath := b.cdnContainerAndBlob(p)
+			if containerName == "" || blobPath == "" {
 				errCh <- errors.New("missing values")
 				return
 			}
 
-			blobPath := filepath.Join(cacheKey, filename)
-			reqURL, err := b.generateSASTokenWithCDN(remoteRoot, blobPath)
+			reqURL, err := b.generateSASTokenWithCDN(containerName, blobPath)
 			if err != nil {
 				errCh <- fmt.Errorf("sas query params, %w", err)
 				return
@@ -225,6 +222,27 @@ func (b *Backend) Exists(ctx context.Context, p string) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// cdnContainerAndBlob resolves the container name and the in-container blob path for
+// a CDN request. The CDN fronts blob storage, so the URL must be /<container>/<blob>.
+//
+// Current layout: an explicit container is configured (--azure.blob-container-name),
+// so the whole path is the blob key inside that container.
+//
+// Legacy layout: no container was configured and the container name rode in as the
+// first path segment, because foreman passed --remote-root <container> with an empty
+// container. Split that first segment off so historical caches stay reachable, and so
+// this binary keeps working when invoked by an older foreman.
+func (b *Backend) cdnContainerAndBlob(p string) (containerName, blobPath string) {
+	p = strings.TrimPrefix(filepath.ToSlash(p), "/")
+	if b.cfg.ContainerName != "" {
+		return b.cfg.ContainerName, p
+	}
+	if container, blob, found := strings.Cut(p, "/"); found {
+		return container, blob
+	}
+	return p, ""
 }
 
 // generateSASTokenWithCDN generates a URL pointing at the CDN host, authenticated with a SAS token.
